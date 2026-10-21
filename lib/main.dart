@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'audio.dart';
 import 'discovery.dart';
@@ -18,7 +20,7 @@ void main() {
   runApp(
     ChangeNotifierProvider(
       create: (_) => RoomState(),
-      child: const BlueTalkApp(),
+      child: const PrimeTalkApp(),
     ),
   );
 }
@@ -43,9 +45,9 @@ class RoomState extends ChangeNotifier {
   RoomRole role = RoomRole.none;
   String roomName = '';
   bool micMuted = false;
-  bool speakerOn = false; // false = الأذن، true = السماعة الخارجية
+  bool speakerOn = false;
   List<String> hostIps = [];
-  final List<Peer> peers = []; // أول عنصر دائماً هو أنت
+  final List<Peer> peers = [];
 
   RoomServer? _server;
   RoomClient? _client;
@@ -164,7 +166,7 @@ class RoomState extends ChangeNotifier {
       onError: (_) {},
     );
     if (!await server.start()) {
-      return 'فشل تشغيل الهوست (ممكن البورت مشغول)';
+      return 'Failed to start host (Port busy)';
     }
     _server = server;
 
@@ -222,7 +224,7 @@ class RoomState extends ChangeNotifier {
       onAudio: (id, pcm) => audio.pushRemote(id, pcm),
       onDisconnected: () {
         if (!completer.isCompleted) {
-          completer.complete('انقطع الاتصال بالهوست');
+          completer.complete('Connection lost');
         } else {
           endCall();
         }
@@ -243,7 +245,7 @@ class RoomState extends ChangeNotifier {
 
     final result = await completer.future.timeout(
       const Duration(seconds: 6),
-      onTimeout: () => 'ما جاوب الهوست',
+      onTimeout: () => 'Host did not respond',
     );
     if (result != null) {
       client.disconnect();
@@ -313,13 +315,13 @@ class RoomState extends ChangeNotifier {
 // App
 // ---------------------------------------------------------------------------
 
-class BlueTalkApp extends StatelessWidget {
-  const BlueTalkApp({super.key});
+class PrimeTalkApp extends StatelessWidget {
+  const PrimeTalkApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'BlueTalk',
+      title: 'PRIME TALK',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         brightness: Brightness.dark,
@@ -516,9 +518,71 @@ class RoundControl extends StatelessWidget {
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
+  void _showDevDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: kCard,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: const BorderSide(color: kGreen, width: 1.5),
+        ),
+        title: const Row(
+          children: [
+            Icon(Icons.code, color: kGreen),
+            SizedBox(width: 10),
+            Text('About Developer', style: TextStyle(color: Colors.white, fontSize: 18)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Developer: Mohamed Hussain (M12)',
+              style: TextStyle(color: kGreen, fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            const SizedBox(height: 8),
+            const Text('Age: 16 years old', style: TextStyle(color: Colors.white70)),
+            const SizedBox(height: 6),
+            const Text(
+              'Expertise: Flutter, AI Integration, and 2D Game Development. Passionate about building robust offline applications.',
+              style: TextStyle(color: Colors.white60, height: 1.4),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton.icon(
+            onPressed: () async {
+              final Uri url = Uri.parse('https://www.instagram.com/m12_mo7/');
+              if (await canLaunchUrl(url)) {
+                await launchUrl(url, mode: LaunchMode.externalApplication);
+              }
+            },
+            icon: const Icon(Icons.camera_alt, color: kGreen),
+            label: const Text('Instagram @m12_mo7', style: TextStyle(color: kGreen)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close', style: TextStyle(color: Colors.white54)),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: AppBar(
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.info_outline, color: kGreen),
+            tooltip: 'Dev',
+            onPressed: () => _showDevDialog(context),
+          ),
+        ],
+      ),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -528,17 +592,17 @@ class HomeScreen extends StatelessWidget {
               const Icon(Icons.graphic_eq, color: kGreen, size: 90),
               const SizedBox(height: 16),
               const Text(
-                'BLUETALK',
+                'PRIME TALK',
                 style: TextStyle(
-                  fontSize: 34,
+                  fontSize: 32,
                   fontWeight: FontWeight.bold,
                   color: kGreen,
-                  letterSpacing: 6,
+                  letterSpacing: 4,
                 ),
               ),
               const SizedBox(height: 8),
               const Text(
-                'Offline voice rooms',
+                'Secure offline voice rooms',
                 style: TextStyle(color: Colors.white54),
               ),
               const Spacer(flex: 2),
@@ -818,7 +882,6 @@ class ActiveCallScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final state = context.watch<RoomState>();
 
-    // إذا انتهت المكالمة (مثلاً المضيف سكّر) نرجع للرئيسية
     if (state.role == RoomRole.none) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (context.mounted) {
@@ -828,7 +891,7 @@ class ActiveCallScreen extends StatelessWidget {
     }
 
     return PopScope(
-      canPop: false, // زر الرجوع ما يطلعك من المكالمة، استخدم END CALL
+      canPop: false,
       child: Scaffold(
         appBar: AppBar(
           automaticallyImplyLeading: false,
@@ -857,7 +920,7 @@ class ActiveCallScreen extends StatelessWidget {
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
-                    'IP: ${state.hostIps.join('   |   ')}',
+                    'IP: ${state.hostIps.join('    |    ')}',
                     textAlign: TextAlign.center,
                     style: const TextStyle(color: kGreen),
                   ),
